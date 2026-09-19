@@ -464,6 +464,7 @@ var RS = "https://raw.githubusercontent.com";
 var G = {
   SELECT: "🚀 节点选择",
   AUTO: "♻️ 自动选择",
+  FALLBACK: "♻️ 故障转移",
   DIRECT: "🎯 全球直连",
   BLOCK: "🛑 全球拦截",
   PURGE: "🍃 应用净化",
@@ -882,7 +883,7 @@ proxy-groups:
     proxies:
       - "${G.AUTO}"
 ${p(picks)}
-      - "${G.DIRECT}"
+      - "${G.FALLBACK}"
 
   - name: "${G.AUTO}"
     type: url-test
@@ -891,7 +892,15 @@ ${p(picks)}
     tolerance: 50
     lazy: true
     proxies:
-${q([...allComboNames, ...entries])}
+${p(picks)}
+
+  - name: "${G.FALLBACK}"
+    type: fallback
+    url: http://www.gstatic.com/generate_204
+    interval: 180
+    lazy: true
+    proxies:
+${p(picks)}
 
 ${locDefs}
 
@@ -904,10 +913,72 @@ ${locDefs}
     proxies:
 ${q(entries)}
 
+  - name: "${G.YT}"
+    type: select
+    proxies:
+      - "${G.SELECT}"
+      - "${G.AUTO}"
+      - "${G.FALLBACK}"
+${p(picks)}
+
+  - name: "${G.NF}"
+    type: select
+    proxies:
+      - "${G.SELECT}"
+      - "${G.AUTO}"
+      - "${G.FALLBACK}"
+${p(picks)}
+
+  - name: "${G.MEDIA}"
+    type: select
+    proxies:
+      - "${G.SELECT}"
+      - "${G.AUTO}"
+      - "${G.FALLBACK}"
+      - "${G.DIRECT}"
+
+  - name: "${G.TG}"
+    type: select
+    proxies:
+      - "${G.SELECT}"
+      - "${G.AUTO}"
+      - "${G.DIRECT}"
+
+  - name: "${G.AI}"
+    type: select
+    proxies:
+      - "${G.SELECT}"
+      - "${G.AUTO}"
+      - "${G.FALLBACK}"
+${p(picks)}
+
+  - name: "${G.MS}"
+    type: select
+    proxies:
+      - "${G.DIRECT}"
+      - "${G.SELECT}"
+      - "${G.AUTO}"
+
+  - name: "${G.APPLE}"
+    type: select
+    proxies:
+      - "${G.DIRECT}"
+      - "${G.SELECT}"
+      - "${G.AUTO}"
+
+  - name: "${G.FCM}"
+    type: select
+    proxies:
+      - "${G.SELECT}"
+      - "${G.DIRECT}"
+      - "${G.AUTO}"
+
   - name: "${G.DIRECT}"
     type: select
     proxies:
       - DIRECT
+      - "${G.SELECT}"
+      - "${G.AUTO}"
 
   - name: "${G.BLOCK}"
     type: select
@@ -919,57 +990,6 @@ ${q(entries)}
     type: select
     proxies:
       - REJECT
-      - DIRECT
-      - "${G.SELECT}"
-
-  - name: "${G.FCM}"
-    type: select
-    proxies:
-      - DIRECT
-      - "${G.SELECT}"
-
-  - name: "${G.MS}"
-    type: select
-    proxies:
-      - DIRECT
-      - "${G.SELECT}"
-
-  - name: "${G.APPLE}"
-    type: select
-    proxies:
-      - DIRECT
-      - "${G.SELECT}"
-
-  - name: "${G.TG}"
-    type: select
-    proxies:
-      - "${G.SELECT}"
-      - "${G.AUTO}"
-
-  - name: "${G.AI}"
-    type: select
-    proxies:
-      - "${G.SELECT}"
-      - "${G.AUTO}"
-      - DIRECT
-
-  - name: "${G.YT}"
-    type: select
-    proxies:
-      - "${G.SELECT}"
-      - "${G.AUTO}"
-
-  - name: "${G.NF}"
-    type: select
-    proxies:
-      - "${G.SELECT}"
-      - "${G.AUTO}"
-
-  - name: "${G.MEDIA}"
-    type: select
-    proxies:
-      - "${G.SELECT}"
-      - "${G.AUTO}"
       - DIRECT
 
   - name: "${G.FINAL}"
@@ -984,6 +1004,8 @@ ${prov}
 
 rules:
 ${rules}
+  - GEOIP,LAN,${G.DIRECT},no-resolve
+  - GEOIP,CN,${G.DIRECT}
   - MATCH,${G.FINAL}
 `;
   return {
@@ -1193,6 +1215,7 @@ function renderUI(state, host, sp, token, cred, settings = {}) {
   const sniPreset = settings.sniPreset || DEFAULT_SNI;
   const sniCustom = settings.sniCustom || "";
   const currentSni = resolveSni(settings);
+  const tokenNeverChecked = settings.tokenNeverExpire !== false ? "checked" : "";
   const sniCustomEsc = String(sniCustom).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
   const groups = {};
   for (const item of SNI_PRESETS) {
@@ -1408,6 +1431,23 @@ function renderUI(state, host, sp, token, cred, settings = {}) {
     </div>
 
     <div class="sec">
+      <div class="sec-t">\u8BA2\u9605 TOKEN</div>
+      <div class="sub" style="align-items:center">
+        <label style="display:flex;align-items:center;gap:10px;font-size:12px;color:var(--cyan);cursor:pointer;user-select:none">
+          <input type="checkbox" id="tokenNever" ${tokenNeverChecked}
+                 style="width:16px;height:16px;accent-color:var(--pink)">
+          Token \u6C38\u4E0D\u8FC7\u671F\uFF08\u63A8\u8350\uFF09
+        </label>
+        <button onclick="setTokenExpire()">\u4FDD\u5B58</button>
+      </div>
+      <div class="note">
+        \u5F00\u542F\u540E\u8BA2\u9605\u94FE\u63A5\u4E2D\u7684 token <b>\u4E0D\u4F1A 7 \u5929\u8FC7\u671F</b>\u3002<br>
+        \u4FEE\u6539\u7BA1\u7406\u5BC6\u7801\u4ECD\u4F1A\u4F7F\u65E7 token \u5168\u90E8\u5931\u6548\uFF0C\u9700\u91CD\u65B0\u590D\u5236\u8BA2\u9605\u94FE\u63A5\u3002<br>
+        \u5207\u6362\u6B64\u5F00\u5173\u540E\u8BF7\u91CD\u65B0\u590D\u5236\u9875\u9762\u4E0A\u7684\u8BA2\u9605\u5730\u5740\u3002
+      </div>
+    </div>
+
+    <div class="sec">
       <div class="sec-t">MASQUE SNI</div>
       <div class="sni-panel">
         <div class="sni-now">
@@ -1497,6 +1537,10 @@ function setPath(id){
   const v=document.getElementById(id||'sp').value.trim();
   if(!v){say('\u8DEF\u5F84\u4E0D\u80FD\u4E3A\u7A7A','var(--red)');return;}
   post('/api/sub-path',{path:v},'\u5DF2\u4FDD\u5B58');
+}
+function setTokenExpire(){
+  const on=document.getElementById('tokenNever').checked;
+  post('/api/token-expire',{neverExpire:on},'\u5DF2\u4FDD\u5B58');
 }
 function onSniPreset(){
   const p=document.getElementById('sniPreset').value;
@@ -1592,15 +1636,23 @@ async function hmac(secret, msg) {
   return b642(sig).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 var TTL = 7 * 24 * 3600 * 1e3;
-async function signToken(cred) {
+// neverExpire=true：永久 token（exp=0）；修改密码后仍全部失效
+async function signToken(cred, neverExpire = true) {
+  if (neverExpire) {
+    return `0.${await hmac(cred.hash, "0")}`;
+  }
   const exp = Date.now() + TTL;
   return `${exp}.${await hmac(cred.hash, String(exp))}`;
 }
-async function verifyToken(cred, token) {
+async function verifyToken(cred, token, neverExpire = true) {
   if (!cred || !cred.hash || !token || !token.includes(".")) return false;
   const i = token.lastIndexOf(".");
   const exp = token.slice(0, i);
   const sig = token.slice(i + 1);
+  if (exp === "0") {
+    if (!neverExpire) return false;
+    return safeEqual(sig, await hmac(cred.hash, "0"));
+  }
   if (!/^\d+$/.test(exp) || Number(exp) < Date.now()) return false;
   return safeEqual(sig, await hmac(cred.hash, exp));
 }
@@ -1661,7 +1713,8 @@ async function getSettings(env) {
   return {
     subPath: s.subPath || DEFAULT_SUB,
     sniPreset: s.sniPreset || DEFAULT_SNI,
-    sniCustom: s.sniCustom || ""
+    sniCustom: s.sniCustom || "",
+    tokenNeverExpire: s.tokenNeverExpire !== false
   };
 }
 async function getWarp(env, force = false) {
@@ -1758,7 +1811,10 @@ var index_default = {
     const ip = req.headers.get("cf-connecting-ip") || "unknown";
     if (!env || !env.KV) return html(renderNoKV(), 500);
     const cred = await env.KV.get(K_CRED, "json");
-    const authed = cred && await verifyToken(cred, readCookie(req, COOKIE));
+    // 先读设置以决定 token 是否按永久校验（无 cred 时用默认 true）
+    const settingsBoot = await getSettings(env);
+    const neverExpBoot = settingsBoot.tokenNeverExpire;
+    const authed = cred && await verifyToken(cred, readCookie(req, COOKIE), neverExpBoot);
     if (!cred) {
       if (path === "/api/setup" && req.method === "POST") {
         const body = await req.json().catch(() => ({}));
@@ -1791,10 +1847,11 @@ var index_default = {
       return notFound();
     }
     const settings = await getSettings(env);
+    const neverExp = settings.tokenNeverExpire;
     const subPath = "/" + settings.subPath;
     if (path === subPath) {
       const t = url.searchParams.get("token") || "";
-      if (!await verifyToken(cred, t) && !authed) return notFound();
+      if (!await verifyToken(cred, t, neverExp) && !authed) return notFound();
       let yaml;
       try {
         yaml = await ensureConfig(env);
@@ -1829,7 +1886,7 @@ var index_default = {
         return json({ ok: false, error: "\u5BC6\u7801\u9519\u8BEF" }, 401);
       }
       await clearRateLimit(env, ip);
-      const token = await signToken(cred);
+      const token = await signToken(cred, neverExpBoot);
       return new Response(JSON.stringify({ ok: true }), {
         headers: {
           "content-type": "application/json; charset=utf-8",
@@ -1850,7 +1907,7 @@ var index_default = {
       if (!authed) return html(renderLogin());
       let state = await env.KV.get(K_STATE, "json");
       if (!state || typeof state !== "object") state = {};
-      const token = await signToken(cred);
+      const token = await signToken(cred, neverExpBoot);
       if (!state.warp || !state.warp.deviceId) {
         try {
           const w = await env.KV.get(K_WARP, "json");
@@ -1891,6 +1948,24 @@ var index_default = {
       }
       await env.KV.put(K_SET, JSON.stringify({ ...settings, subPath: p2 }));
       return json({ ok: true, msg: `\u8BA2\u9605\u8DEF\u5F84\u5DF2\u6539\u4E3A /${p2}` });
+    }
+    if (path === "/api/token-expire" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const on = body.neverExpire !== false && body.neverExpire !== "0" && body.neverExpire !== 0;
+      await env.KV.put(K_SET, JSON.stringify({ ...settings, tokenNeverExpire: !!on }));
+      // 立即按新策略签发 cookie，订阅链接需用户重新复制
+      const token = await signToken(cred, !!on);
+      return new Response(JSON.stringify({
+        ok: true,
+        msg: on
+          ? "\u5DF2\u5F00\u542F\uFF1A\u8BA2\u9605 token \u6C38\u4E0D\u8FC7\u671F\uFF08\u8BF7\u91CD\u65B0\u590D\u5236\u8BA2\u9605\u94FE\u63A5\uFF09"
+          : "\u5DF2\u5173\u95ED\uFF1A\u8BA2\u9605 token \u7EA6 7 \u5929\u8FC7\u671F\uFF08\u8BF7\u91CD\u65B0\u590D\u5236\u8BA2\u9605\u94FE\u63A5\uFF09"
+      }), {
+        headers: {
+          "content-type": "application/json; charset=utf-8",
+          "set-cookie": `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${7 * 24 * 3600}`
+        }
+      });
     }
     if (path === "/api/sni" && req.method === "POST") {
       const body = await req.json().catch(() => ({}));
@@ -1935,7 +2010,7 @@ var index_default = {
       if (pw !== body.confirm) return json({ ok: false, error: "\u4E24\u6B21\u8F93\u5165\u4E0D\u4E00\u81F4" }, 400);
       const c = await makeCred(pw);
       await env.KV.put(K_CRED, JSON.stringify(c));
-      const token = await signToken(c);
+      const token = await signToken(c, neverExpBoot);
       return new Response(
         JSON.stringify({ ok: true, msg: "\u5BC6\u7801\u5DF2\u6539\uFF0C\u65E7\u7684\u8BA2\u9605\u94FE\u63A5\u5168\u90E8\u5931\u6548" }),
         {
