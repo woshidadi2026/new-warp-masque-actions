@@ -1,4 +1,3 @@
-// Opera VPN over Cloudflare WARP (MASQUE) —— 单文件版\n// 由 src/ 打包而成，网页部署用。改代码请改 src/ 后重新 npm run build。\n// 仓库 https://github.com/byJoey/warp-masque-actions\n
 
 // src/warp.js
 var API = "https://api.cloudflareclient.com/v0a4471";
