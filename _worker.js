@@ -478,20 +478,25 @@ var G = {
   APPLE: "🍎 苹果服务",
   TG: "📲 电报信息",
   AI: "🤖 AI服务",
+  GH: "🐙 GitHub",
   YT: "📹 油管视频",
   NF: "🎬 奈飞视频",
   MEDIA: "🌍 国外媒体",
+  CFCN: "☁️ Cloudflare中国",
   WARP: "WARP直连",
   FINAL: "🐟 漏网之鱼"
 };
 var RULESETS = [
+  // 局域网 / CF 优先
   [G.DIRECT, RS + "/cmliu/ACL4SSR/refs/heads/main/Clash/CFnat.list"],
   [G.DIRECT, RS + "/ACL4SSR/ACL4SSR/master/Clash/LocalAreaNetwork.list"],
-  [G.DIRECT, RS + "/ACL4SSR/ACL4SSR/master/Clash/UnBan.list"],
-  [G.BLOCK, RS + "/ACL4SSR/ACL4SSR/master/Clash/BanAD.list"],
+  // 广告拦截必须在「全球直连 / 国内域名」之前，否则中文广告域名会被 ChinaDomain 等抢先直连
+  [G.BLOCK, "https://raw.githubusercontent.com/privacy-protection-tools/anti-AD/master/anti-ad-clash.yaml"],
   [G.PURGE, RS + "/ACL4SSR/ACL4SSR/master/Clash/BanProgramAD.list"],
   [G.PURGE, RS + "/cmliu/ACL4SSR/main/Clash/adobe.list"],
   [G.PURGE, RS + "/cmliu/ACL4SSR/main/Clash/IDM.list"],
+  // 其余规则
+  [G.DIRECT, RS + "/ACL4SSR/ACL4SSR/master/Clash/UnBan.list"],
   [G.FCM, RS + "/ACL4SSR/ACL4SSR/master/Clash/Ruleset/GoogleFCM.list"],
   [G.DIRECT, RS + "/ACL4SSR/ACL4SSR/master/Clash/GoogleCN.list"],
   [G.DIRECT, RS + "/ACL4SSR/ACL4SSR/master/Clash/Ruleset/SteamCN.list"],
@@ -717,24 +722,46 @@ var AI_DOMAINS = [
   "siliconflow.cn",
   "dashscope.aliyuncs.com"
 ];
+var GH_DOMAINS = [
+  "github.com",
+  "github.io",
+  "githubusercontent.com",
+  "githubassets.com",
+  "github.githubassets.com",
+  "ghcr.io",
+  "npm.pkg.github.com",
+  "containers.pkg.github.com",
+  "pkg.github.com"
+];
 var q = (a, n = 6) => a.map((x) => " ".repeat(n) + `- "${x}"`).join("\n");
 var p = (a, n = 6) => a.map((x) => " ".repeat(n) + `- ${x}`).join("\n");
 function buildRules() {
   const prov = [], rules = [];
   RULESETS.forEach(([group, url], i) => {
-    const pn = `rule${String(i).padStart(2, "0")}`;
+    // anti-AD 使用可读名称，日志显示 Anti-AD 而非 rule02
+    const isAntiAd = group === G.BLOCK;
+    const pn = isAntiAd ? "Anti-AD" : `rule${String(i).padStart(2, "0")}`;
+    const behavior = isAntiAd ? "domain" : "classical";
+    const format = isAntiAd ? "yaml" : "text";
+    const pathExt = isAntiAd ? "yaml" : "list";
     prov.push(`  ${pn}:
     type: http
-    behavior: classical
-    format: text
+    behavior: ${behavior}
+    format: ${format}
     interval: 86400
     url: ${url}
-    path: ./ruleset/${pn}.list`);
+    path: ./ruleset/${pn}.${pathExt}`);
     // 策略名必须与 proxy-groups 完全一致
     rules.push(`  - RULE-SET,${pn},${group}`);
   });
   const ai = AI_DOMAINS.map((d) => `  - DOMAIN-SUFFIX,${d},${G.AI}`);
-  return { prov: prov.join("\n"), rules: [...ai, ...rules].join("\n") };
+  const gh = GH_DOMAINS.map((d) => `  - DOMAIN-SUFFIX,${d},${G.GH}`);
+  // Cloudflare 中国站：优先走独立策略组（须在其它规则前）
+  const cfcn = [
+    `  - DOMAIN,www.cloudflare-cn.com,${G.CFCN}`,
+    `  - DOMAIN-SUFFIX,cloudflare-cn.com,${G.CFCN}`
+  ];
+  return { prov: prov.join("\n"), rules: [...cfcn, ...gh, ...ai, ...rules].join("\n") };
 }
 function head(ipv6) {
   return `mixed-port: 7890
@@ -957,13 +984,23 @@ ${locDefs}
     proxies:
 ${q(entries)}
 
-  - name: "${G.YT}"
+  - name: "${G.GH}"
     type: select
     proxies:
+      - "${G.WARP}"
       - "${G.SELECT}"
       - "${G.AUTO}"
       - "${G.FALLBACK}"
-${p(picks)}
+${p(locNames)}
+
+  - name: "${G.YT}"
+    type: select
+    proxies:
+      - "${G.WARP}"
+      - "${G.SELECT}"
+      - "${G.AUTO}"
+      - "${G.FALLBACK}"
+${p(locNames)}
 
   - name: "${G.NF}"
     type: select
@@ -976,6 +1013,7 @@ ${p(picks)}
   - name: "${G.MEDIA}"
     type: select
     proxies:
+      - "${G.WARP}"
       - "${G.SELECT}"
       - "${G.AUTO}"
       - "${G.FALLBACK}"
@@ -984,6 +1022,7 @@ ${p(picks)}
   - name: "${G.TG}"
     type: select
     proxies:
+      - "${G.WARP}"
       - "${G.SELECT}"
       - "${G.AUTO}"
       - "${G.DIRECT}"
@@ -1014,7 +1053,15 @@ ${p(picks)}
     type: select
     proxies:
       - "${G.SELECT}"
+      - "${G.WARP}"
       - "${G.DIRECT}"
+
+  - name: "${G.CFCN}"
+    type: select
+    proxies:
+      - "${G.WARP}"
+      - "${G.DIRECT}"
+      - "${G.SELECT}"
       - "${G.AUTO}"
 
   - name: "${G.DIRECT}"
@@ -1039,6 +1086,7 @@ ${p(picks)}
   - name: "${G.FINAL}"
     type: select
     proxies:
+      - "${G.WARP}"
       - "${G.SELECT}"
       - "${G.DIRECT}"
       - "${G.AUTO}"
