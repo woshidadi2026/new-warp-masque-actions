@@ -26,7 +26,7 @@
 
 部署方式与 [原项目](https://github.com/byJoey/warp-masque-actions) 相同：
 
-1. 将本仓库根目录文件上传至 Cloudflare **Pages** 或 **Worker**
+1. 将本仓库_worker.js上传至 Cloudflare **Pages** 或 **Worker**
 2. 绑定 KV 命名空间，变量名必须为 `KV`
 3. 访问站点设置管理密码
 4. 在管理页点击「注册 WARP」，再「刷新 Opera 凭据」
