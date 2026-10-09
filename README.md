@@ -32,7 +32,7 @@
 3. 访问站点设置管理密码
 4. 在管理页点击「注册 WARP」，再「刷新 Opera 凭据」
 5. 复制订阅链接导入 Clash Verge / Mihomo 等客户端
-6. 如果要使用masque over masque协议，就将masqueOvermasque.js改名为_worker.js部署到coudflare pages，先点击“注册外层warp”，过几分钟再点击“注册内层”，在刷新opera凭据，即可使用masque over masque协议
+6. 如果要使用masque over masque协议，就将masqueOvermasque.js改名为_worker.js部署到cloudflare pages，先点击“注册外层warp”，过几分钟再点击“注册内层”，在刷新opera凭据，即可使用masque over masque协议
 
 > 使用 Pages 时请确保已绑定 KV；首次使用需手动注册 WARP，订阅请求不会自动注册。
 
