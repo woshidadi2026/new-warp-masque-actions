@@ -485,6 +485,7 @@ var G = {
   CFCN: "☁️ Cloudflare中国",
   WARP: "WARP直连",
   MOM: "🔄 MasqueOverMasque",
+  VG: "🏠 VPNGate",
   FINAL: "🐟 漏网之鱼"
 };
 var RULESETS = [
@@ -944,7 +945,7 @@ ${p(picks)}
       - \u{1F3AF} \u5168\u7403\u76F4\u8FDE
       - \u267B\uFE0F \u81EA\u52A8\u9009\u62E9`;
 }
-function buildConfig(warp, opera, sni, transport = {}, warpInner = null) {
+function buildConfig(warp, opera, sni, transport = {}, warpInner = null, vg = null) {
   const { entries, proxies, momEntries } = buildEntries(warp, sni, transport, warpInner);
   const byLoc = {};
   for (const land of opera.landings) {
@@ -960,8 +961,10 @@ function buildConfig(warp, opera, sni, transport = {}, warpInner = null) {
   const locNames = Object.keys(byLoc).map((l) => `${l}线路`);
   // 把 MasqueOverMasque 也加入可选
   const hasMom = momEntries && momEntries.length > 0;
+  const vgOn = !!(vg && vg.vgEnabled);
   const picks = [...locNames, G.WARP];
   if (hasMom) picks.push(G.MOM);
+  if (vgOn) picks.push(G.VG);
 
   const locDefs = Object.entries(byLoc).map(([loc, tags]) => `  - name: "${loc}线路"
     type: url-test
@@ -999,13 +1002,14 @@ ${q(momEntries)}
 #
 # 外层接入点 ${entries.length} x 落地 ${opera.landings.length} = 组合 ${combos}
 # MoM 节点 ${momEntries ? momEntries.length : 0}
-# 需要 mihomo Alpha（masque + dialer-proxy）
+# VPNGate 家宽 ${vgOn ? "已启用（proxy-providers → " + G.VG + "）" : "未启用"}
+# 需要 mihomo Alpha（masque + dialer-proxy）；VPNGate 需 mihomo ≥ 1.19.25（openvpn）
 
 ${head(true)}
 
 proxies:
 ${proxies.join("\n")}
-
+${vgOn ? buildVgProviderBlock(vg) : ""}
 proxy-groups:
   - name: "${G.SELECT}"
     type: select
@@ -1041,11 +1045,13 @@ ${locDefs}
     lazy: true
     proxies:
 ${q(entries)}
-${momGroup}
+${momGroup}${vgOn ? buildVgGroupsBlock(vg) : ""}
   - name: "${G.GH}"
     type: select
     proxies:
-      - "${G.WARP}"
+${hasMom ? `      - "${G.MOM}"
+` : ""}${vgOn ? `      - "${G.VG}"
+` : ""}      - "${G.WARP}"
       - "${G.SELECT}"
       - "${G.AUTO}"
       - "${G.FALLBACK}"
@@ -1054,7 +1060,9 @@ ${p(locNames)}
   - name: "${G.YT}"
     type: select
     proxies:
-      - "${G.WARP}"
+${hasMom ? `      - "${G.MOM}"
+` : ""}${vgOn ? `      - "${G.VG}"
+` : ""}      - "${G.WARP}"
       - "${G.SELECT}"
       - "${G.AUTO}"
       - "${G.FALLBACK}"
@@ -1072,7 +1080,8 @@ ${p(picks)}
     type: select
     proxies:
       - "${G.WARP}"
-      - "${G.SELECT}"
+${vgOn ? `      - "${G.VG}"
+` : ""}      - "${G.SELECT}"
       - "${G.AUTO}"
       - "${G.FALLBACK}"
       - "${G.DIRECT}"
@@ -1089,6 +1098,7 @@ ${p(picks)}
     type: select
     proxies:
 ${hasMom ? `      - "${G.MOM}"
+` : ""}${vgOn ? `      - "${G.VG}"
 ` : ""}      - "${G.SELECT}"
       - "${G.AUTO}"
       - "${G.FALLBACK}"
@@ -1147,6 +1157,7 @@ ${p(locNames)}
     type: select
     proxies:
 ${hasMom ? `      - "${G.MOM}"
+` : ""}${vgOn ? `      - "${G.VG}"
 ` : ""}      - "${G.WARP}"
       - "${G.AUTO}"
       - "${G.SELECT}"
@@ -1166,7 +1177,8 @@ ${rules}
     entries: entries.length,
     landings: opera.landings.length,
     combos,
-    momEntries: momEntries ? momEntries.length : 0
+    momEntries: momEntries ? momEntries.length : 0,
+    vgEnabled: vgOn
   };
 }
 
@@ -1371,6 +1383,11 @@ function renderUI(state, host, sp, token, cred, settings = {}) {
   const currentSni = resolveSni(settings);
   const tokenNeverChecked = settings.tokenNeverExpire !== false ? "checked" : "";
   const sniCustomEsc = String(sniCustom).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  const vgEnabled = settings.vgEnabled !== false;
+  const vgUseWarp = settings.vgUseWarp !== false;
+  const vgResidential = settings.vgResidential !== false;
+  const vgLimit = Math.max(1, Math.min(30, Number(settings.vgLimit) || 15));
+  const vgChk = (k) => (settings[k] !== false ? "checked" : "");
   const ccMode = normalizeCc(settings.ccMode);
   const outerCc = normalizeOuterCc(settings.outerCc);
   const bbrProfile = normalizeBbrProfile(settings.bbrProfile);
@@ -1563,6 +1580,7 @@ function renderUI(state, host, sp, token, cred, settings = {}) {
       ${row("内层注册于", (s.warpInner && s.warpInner.registeredAt) ? fmt(new Date(s.warpInner.registeredAt)) : "—")}
       ${row("MoM 节点数", stat.momEntries ?? "0")}
       ${row("MASQUE SNI", s.sni || currentSni)}
+      ${row("VPNGate", (s.vg && s.vg.enabled) ? ("on · limit " + (s.vg.limit||"?") + (s.vg.countries && s.vg.countries.length ? " · " + s.vg.countries.join("+") : "")) : (vgEnabled ? "on (待重建)" : "off"), (s.vg && s.vg.enabled) || vgEnabled ? "ok" : "warn")}
     </div>
 
     <div class="sec">
@@ -1684,6 +1702,67 @@ function renderUI(state, host, sp, token, cred, settings = {}) {
     </div>
 
     <div class="sec">
+      <div class="sec-t">VPNGate \u5BB6\u5BBD</div>
+      <div class="sni-panel">
+        <div class="sni-now">
+          <span class="k">\u5F53\u524D</span>
+          <span class="v ${vgEnabled ? "ok" : "warn"}">${vgEnabled ? "\u5DF2\u542F\u7528 · limit " + vgLimit : "\u672A\u542F\u7528"}</span>
+        </div>
+        <div class="sni-field">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
+            <input type="checkbox" id="vgEnabled" ${vgEnabled ? "checked" : ""}>
+            \u542F\u7528 VPNGate \u5BB6\u5BBD\u7EC4\uFF08\u5199\u5165\u4E3B\u8BA2\u9605 proxy-providers\uFF09
+          </label>
+        </div>
+        <div class="sni-field">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
+            <input type="checkbox" id="vgUseWarp" ${vgUseWarp ? "checked" : ""}>
+            \u8BA2\u9605\u4E0B\u8F7D + OpenVPN \u8FDE\u63A5\u90FD\u7ECF WARP\u76F4\u8FDE\u4E2D\u8F6C\uFF08\u63A8\u8350\uFF09
+          </label>
+        </div>
+        <div class="sni-field">
+          <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text)">
+            <input type="checkbox" id="vgResidential" ${vgResidential ? "checked" : ""}>
+            \u5C3D\u91CF\u8FC7\u6EE4\u673A\u623F\u8282\u70B9\uFF08\u53EA\u7559\u5FD7\u613F\u8005\u5BB6\u5BBD\uFF09
+          </label>
+        </div>
+        <div class="sni-field">
+          <div class="sni-lab">\u6BCF\u4E2A\u56FD\u5BB6\u6700\u591A\u8282\u70B9\u6570</div>
+          <select id="vgLimit" class="sni-select">
+            <option value="3"${vgLimit===3?" selected":""}>3</option>
+            <option value="6"${vgLimit===6?" selected":""}>6</option>
+            <option value="10"${vgLimit===10?" selected":""}>10</option>
+            <option value="15"${vgLimit===15?" selected":""}>15</option>
+            <option value="20"${vgLimit===20?" selected":""}>20</option>
+            <option value="30"${vgLimit===30?" selected":""}>30</option>
+          </select>
+        </div>
+        <div class="sni-field">
+          <div class="sni-lab">\u56FD\u5BB6 / \u5730\u533A</div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px;font-size:12px">
+            <label><input type="checkbox" id="vgJP" ${vgChk("vgJP")}> \u65E5\u672C JP</label>
+            <label><input type="checkbox" id="vgKR" ${vgChk("vgKR")}> \u97E9\u56FD KR</label>
+            <label><input type="checkbox" id="vgUS" ${vgChk("vgUS")}> \u7F8E\u56FD US</label>
+            <label><input type="checkbox" id="vgTW" ${vgChk("vgTW")}> \u53F0\u6E7E TW</label>
+            <label><input type="checkbox" id="vgHK" ${vgChk("vgHK")}> \u9999\u6E2F HK</label>
+            <label><input type="checkbox" id="vgSG" ${vgChk("vgSG")}> \u65B0\u52A0\u5761 SG</label>
+            <label><input type="checkbox" id="vgDE" ${vgChk("vgDE")}> \u5FB7\u56FD DE</label>
+            <label><input type="checkbox" id="vgGB" ${vgChk("vgGB")}> \u82F1\u56FD GB</label>
+            <label><input type="checkbox" id="vgOther" ${vgChk("vgOther")}> \u5176\u5B83\uFF08\u4E0D\u9650\uFF09</label>
+          </div>
+        </div>
+        <div class="sub sni-actions">
+          <button onclick="setVg()">\u4FDD\u5B58\u5E76\u91CD\u5EFA</button>
+        </div>
+        <div class="note">
+          \u5F00\u542F\u540E\u4E3B\u8BA2\u9605\u4F1A\u589E\u52A0 <code>proxy-providers.VPNGATE-HOME</code> \u4E0E\u7B56\u7565\u7EC4 <code>\ud83c\udfe0 VPNGate</code>\uFF08\u5E76\u5165 AI / \u6D41\u5A92\u4F53 / \u6F0F\u7F51\u4E4B\u9C7C\u7B49\uFF09\u3002<br>
+          <code>/api/vpngate</code> \u4EC5\u4F9B Mihomo \u62C9\u53D6 OpenVPN \u5217\u8868\uFF0C\u4E0D\u662F\u7B2C\u4E8C\u4E2A\u8BA2\u9605\u94FE\u63A5\u3002\u9700\u8981 <b>mihomo \u2265 1.19.25</b>\u3002<br>
+          \u6570\u636E\u6E90\uFF1AVPNGate \u5B98\u65B9 CSV\uFF08\u5931\u8D25\u65F6\u56DE\u9000\u516C\u5F00\u955C\u50CF\uFF09\u3002
+        </div>
+      </div>
+    </div>
+
+    <div class="sec">
       <div class="sec-t">\u4FEE\u6539\u5BC6\u7801</div>
       <div class="pw">
         <input type="password" id="c0" placeholder="\u5F53\u524D\u5BC6\u7801" autocomplete="current-password">
@@ -1764,6 +1843,24 @@ function setCongestion(){
   const outerCc=document.getElementById('outerCc').value;
   const bbrProfile=document.getElementById('bbrProfile').value;
   post('/api/congestion',{ccMode, outerCc, bbrProfile},'\u5DF2\u4FDD\u5B58\u62E5\u585E\u63A7\u5236');
+}
+function setVg(){
+  const body={
+    vgEnabled:document.getElementById('vgEnabled').checked,
+    vgUseWarp:document.getElementById('vgUseWarp').checked,
+    vgResidential:document.getElementById('vgResidential').checked,
+    vgLimit:Number(document.getElementById('vgLimit').value)||15,
+    vgJP:document.getElementById('vgJP').checked,
+    vgKR:document.getElementById('vgKR').checked,
+    vgUS:document.getElementById('vgUS').checked,
+    vgTW:document.getElementById('vgTW').checked,
+    vgHK:document.getElementById('vgHK').checked,
+    vgSG:document.getElementById('vgSG').checked,
+    vgDE:document.getElementById('vgDE').checked,
+    vgGB:document.getElementById('vgGB').checked,
+    vgOther:document.getElementById('vgOther').checked
+  };
+  post('/api/vpngate-settings',body,'\u5DF2\u4FDD\u5B58 VPNGate');
 }
 function setSni(){
   const preset=document.getElementById('sniPreset').value;
@@ -1913,6 +2010,315 @@ function normalizePath(p2) {
   return clean;
 }
 
+
+// src/vpngate.js — 家宽 OpenVPN 节点源（并入主订阅 proxy-providers，供 Mihomo 拉取）
+var VPNGATE_API_URLS = [
+  "https://www.vpngate.net/api/iphone/",
+  "https://cdn.jsdelivr.net/gh/GeorgeXie2333/vpngate-list-mirror@latest/data/vpngate.csv"
+];
+var VPNGATE_COUNTRY_META = {
+  JP: "日本", KR: "韩国", US: "美国", TW: "台湾", HK: "香港",
+  SG: "新加坡", DE: "德国", GB: "英国", FR: "法国", CA: "加拿大",
+  AU: "澳大利亚", RU: "俄罗斯", IN: "印度", TH: "泰国", VN: "越南",
+  ID: "印尼", MY: "马来西亚", PH: "菲律宾", IT: "意大利", ES: "西班牙",
+  NL: "荷兰", PL: "波兰", BR: "巴西", AR: "阿根廷", UA: "乌克兰"
+};
+var VPNGATE_DC_HOST_RE = /^(public-vpn-|vpn\d+\.opengw\.net)/i;
+var VPNGATE_DC_IP_PREFIXES = ["219.100.37."];
+function vgYamlQuote(s) {
+  return JSON.stringify(String(s ?? ""));
+}
+function parseOvpnFields(configText) {
+  const text = String(configText || "");
+  let host = "", port = 1194, proto = "udp";
+  const remoteM = text.match(/^\s*remote\s+(\S+)\s+(\d+)/mi);
+  if (remoteM) {
+    host = remoteM[1];
+    port = Number(remoteM[2]) || 1194;
+  }
+  const protoM = text.match(/^\s*proto\s+(\w+)/mi);
+  if (protoM) proto = String(protoM[1] || "udp").toLowerCase();
+  let ca = "";
+  const caM = text.match(/<ca>\s*([\s\S]*?)\s*<\/ca>/i);
+  if (caM) ca = caM[1].trim();
+  return { host, port, proto, ca };
+}
+function isLikelyDatacenter(hostname, ip) {
+  const h = String(hostname || "");
+  const ipStr = String(ip || "");
+  if (VPNGATE_DC_HOST_RE.test(h)) return true;
+  if (VPNGATE_DC_IP_PREFIXES.some((p) => ipStr.startsWith(p))) return true;
+  return false;
+}
+function parseVpngateCsv(body) {
+  const lines = String(body || "").split(/\r?\n/);
+  const kept = [];
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (!line || line.startsWith("*")) continue;
+    kept.push(line.startsWith("#") ? line.slice(1) : line);
+  }
+  if (kept.length < 2) return [];
+  const header = kept[0].split(",").map((x) => x.trim());
+  const idx = {};
+  header.forEach((name, i) => {
+    idx[name] = i;
+  });
+  const need = ["HostName", "IP", "CountryLong", "CountryShort", "OpenVPN_ConfigData_Base64"];
+  for (const k of need) {
+    if (idx[k] == null) return [];
+  }
+  const nodes = [];
+  for (let i = 1; i < kept.length; i++) {
+    const cols = kept[i].split(",");
+    if (cols.length < header.length) {
+      if (cols.length > idx.OpenVPN_ConfigData_Base64) {
+        const head = cols.slice(0, idx.OpenVPN_ConfigData_Base64);
+        const tail = cols.slice(idx.OpenVPN_ConfigData_Base64).join(",");
+        cols.length = 0;
+        cols.push(...head, tail);
+      } else continue;
+    }
+    const get = (name) => String(cols[idx[name]] || "").trim();
+    const hostname = get("HostName");
+    const ip = get("IP");
+    const countryCode = get("CountryShort").toUpperCase();
+    const countryLong = get("CountryLong");
+    const b64 = get("OpenVPN_ConfigData_Base64");
+    if (!ip || !countryCode || !b64) continue;
+    let configText = "";
+    try {
+      const bin = atob(b64);
+      const bytes = new Uint8Array(bin.length);
+      for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j);
+      configText = new TextDecoder("utf-8", { fatal: false }).decode(bytes);
+    } catch {
+      continue;
+    }
+    const ovpn = parseOvpnFields(configText);
+    const server = ovpn.host || ip;
+    if (!server || !ovpn.ca) continue;
+    const ping = Number(get("Ping")) || 0;
+    const speed = Number(get("Speed")) || 0;
+    const sessions = Number(get("NumVpnSessions")) || 0;
+    nodes.push({
+      hostname,
+      ip,
+      countryCode,
+      countryLong,
+      ping,
+      speed,
+      sessions,
+      server,
+      port: ovpn.port,
+      proto: ovpn.proto === "tcp" ? "tcp" : "udp",
+      ca: ovpn.ca,
+      isDc: isLikelyDatacenter(hostname, ip)
+    });
+  }
+  return nodes;
+}
+async function fetchVpngateRaw() {
+  let lastErr = null;
+  for (const url of VPNGATE_API_URLS) {
+    try {
+      const resp = await fetch(url, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (compatible; OperaMasque-VPNGate/1.0)",
+          Accept: "text/plain,*/*"
+        }
+      });
+      if (!resp.ok) {
+        lastErr = new Error(`HTTP ${resp.status} from ${url}`);
+        continue;
+      }
+      const text = await resp.text();
+      if (!text.includes("HostName") || !text.includes("OpenVPN_ConfigData_Base64")) {
+        lastErr = new Error(`invalid CSV from ${url}`);
+        continue;
+      }
+      return text;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  throw lastErr || new Error("VPNGate 列表拉取失败");
+}
+function buildVpngateClashYaml(nodes, { countries, residentialOnly, limit }) {
+  const filtered = nodes.filter((n) => {
+    if (countries.size && !countries.has(n.countryCode)) return false;
+    if (residentialOnly && n.isDc) return false;
+    return true;
+  });
+  filtered.sort((a, b) => b.speed - a.speed || a.ping - b.ping);
+  const perCountryCount = /* @__PURE__ */ new Map();
+  const selected = [];
+  for (const n of filtered) {
+    const c = perCountryCount.get(n.countryCode) || 0;
+    if (c >= limit) continue;
+    perCountryCount.set(n.countryCode, c + 1);
+    selected.push(n);
+  }
+  const lines = [
+    "# VPNGate OpenVPN subscription (auto-generated by Opera-Masque Worker)",
+    `# generated_at: ${(/* @__PURE__ */ new Date()).toISOString()}`,
+    `# nodes: ${selected.length}`,
+    "proxies:"
+  ];
+  const usedNames = /* @__PURE__ */ new Set();
+  for (const n of selected) {
+    let name = `VG-${n.countryCode}-${n.ip}`;
+    let i = 2;
+    while (usedNames.has(name)) {
+      name = `VG-${n.countryCode}-${n.ip}-${i++}`;
+    }
+    usedNames.add(name);
+    lines.push(
+      `  - name: ${vgYamlQuote(name)}`,
+      `    type: openvpn`,
+      `    server: ${vgYamlQuote(n.server)}`,
+      `    port: ${n.port}`,
+      `    proto: ${n.proto}`,
+      `    username: "vpn"`,
+      `    password: "vpn"`,
+      `    udp: ${n.proto === "udp" ? "true" : "false"}`,
+      `    ca: |`
+    );
+    for (const caLine of n.ca.split(/\r?\n/)) {
+      lines.push(`      ${caLine}`);
+    }
+  }
+  if (!selected.length) {
+    lines.push("  # (no nodes matched filters)");
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+async function handleVpngateSubscription(request) {
+  const url = new URL(request.url);
+  const countriesRaw = String(url.searchParams.get("countries") || "").trim();
+  const residentialOnly = !["0", "false", "no"].includes(
+    String(url.searchParams.get("residential") || "1").toLowerCase()
+  );
+  const limit = Math.max(1, Math.min(30, Number(url.searchParams.get("limit") || 8) || 8));
+  const countries = new Set(
+    countriesRaw ? countriesRaw.split(/[,|+\s]+/).map((x) => x.trim().toUpperCase()).filter(Boolean) : []
+  );
+  try {
+    const raw = await fetchVpngateRaw();
+    const nodes = parseVpngateCsv(raw);
+    const yaml = buildVpngateClashYaml(nodes, { countries, residentialOnly, limit });
+    return new Response(yaml, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/yaml; charset=utf-8",
+        "Cache-Control": "public, max-age=300",
+        "Access-Control-Allow-Origin": "*",
+        "X-VPNGate-Nodes": String(nodes.length),
+        "X-Content-Type-Options": "nosniff"
+      }
+    });
+  } catch (e) {
+    return new Response(
+      `# VPNGate fetch failed\nproxies: []\n# error: ${String(e?.message || e)}\n`,
+      {
+        status: 502,
+        headers: {
+          "Content-Type": "text/yaml; charset=utf-8",
+          "Cache-Control": "no-store",
+          "Access-Control-Allow-Origin": "*"
+        }
+      }
+    );
+  }
+}
+function resolveVgOptions(settings, siteOrigin) {
+  const countries = [];
+  if (settings.vgJP !== false) countries.push("JP");
+  if (settings.vgKR !== false) countries.push("KR");
+  if (settings.vgUS !== false) countries.push("US");
+  if (settings.vgTW !== false) countries.push("TW");
+  if (settings.vgHK !== false) countries.push("HK");
+  if (settings.vgSG !== false) countries.push("SG");
+  if (settings.vgDE !== false) countries.push("DE");
+  if (settings.vgGB !== false) countries.push("GB");
+  // vgOther：不在 countries 过滤列表里额外限制；有勾选时若全空才放开全部
+  const enabled = settings.vgEnabled !== false;
+  let list = countries;
+  if (settings.vgOther && !list.length) list = []; // empty set = all countries in provider
+  return {
+    vgEnabled: enabled,
+    vgUseWarp: settings.vgUseWarp !== false,
+    vgResidential: settings.vgResidential !== false,
+    vgLimit: Math.max(1, Math.min(30, Number(settings.vgLimit) || 15)),
+    vgCountries: list,
+    vgOther: !!settings.vgOther,
+    siteOrigin: String(siteOrigin || "").replace(/\/$/, "")
+  };
+}
+function vgProviderUrl(vg) {
+  const params = new URLSearchParams();
+  // 勾选了具体国家时写入；仅 vgOther 时不限制
+  if (vg.vgCountries && vg.vgCountries.length) {
+    params.set("countries", vg.vgCountries.join(","));
+  }
+  params.set("residential", vg.vgResidential ? "1" : "0");
+  params.set("limit", String(vg.vgLimit || 15));
+  const base = vg.siteOrigin ? `${vg.siteOrigin}/api/vpngate` : "/api/vpngate";
+  return `${base}?${params.toString()}`;
+}
+function buildVgProviderBlock(vg) {
+  if (!vg.vgEnabled) return "";
+  const url = vgYamlQuote(vgProviderUrl(vg));
+  const proxyLine = vg.vgUseWarp ? `
+    proxy: "${G.WARP}"` : "";
+  const dialerLine = vg.vgUseWarp ? `
+      dialer-proxy: "${G.WARP}"` : "";
+  return `
+proxy-providers:
+  VPNGATE-HOME:
+    type: http
+    url: ${url}
+    path: "./providers/vpngate-home.yaml"
+    interval: 1800
+    size-limit: 16777216${proxyLine}
+    health-check:
+      enable: true
+      url: "https://www.gstatic.com/generate_204"
+      expected-status: "204"
+      interval: 300
+      timeout: 8000
+      lazy: false
+    override:
+      additional-prefix: "🏠 VG | "${dialerLine}
+`;
+}
+function buildVgGroupsBlock(vg) {
+  if (!vg.vgEnabled) return "";
+  return `
+  - name: "🏠 VPNGate测速"
+    type: url-test
+    hidden: true
+    url: "https://www.gstatic.com/generate_204"
+    expected-status: "204"
+    interval: 180
+    tolerance: 50
+    timeout: 8000
+    lazy: false
+    max-failed-times: 2
+    use:
+      - VPNGATE-HOME
+
+  - name: "${G.VG}"
+    type: select
+    proxies:
+      - "🏠 VPNGate测速"
+    use:
+      - VPNGATE-HOME
+`;
+}
+
+
 // src/index.js
 var K_WARP = "warp:device";          // 外层 MASQUE（普通 WARP）
 var K_WARP_INNER = "warp:device:inner"; // 内层 MASQUE（Masque Over Masque）
@@ -1951,7 +2357,21 @@ async function getSettings(env) {
     outerCc: Object.prototype.hasOwnProperty.call(s, "outerCc")
       ? normalizeOuterCc(s.outerCc)
       : "bbr",
-    bbrProfile: normalizeBbrProfile(s.bbrProfile)
+    bbrProfile: normalizeBbrProfile(s.bbrProfile),
+    // VPNGate 家宽（默认开启，与第一份 Usque 行为对齐）
+    vgEnabled: s.vgEnabled !== false,
+    vgUseWarp: s.vgUseWarp !== false,
+    vgResidential: s.vgResidential !== false,
+    vgLimit: Math.max(1, Math.min(30, Number(s.vgLimit) || 15)),
+    vgJP: s.vgJP !== false,
+    vgKR: s.vgKR !== false,
+    vgUS: s.vgUS !== false,
+    vgTW: s.vgTW !== false,
+    vgHK: s.vgHK !== false,
+    vgSG: s.vgSG !== false,
+    vgDE: s.vgDE !== false,
+    vgGB: s.vgGB !== false,
+    vgOther: s.vgOther !== false
   };
 }
 async function getWarp(env, force = false, which = "outer") {
@@ -1989,7 +2409,7 @@ async function registerWarpToKv(env, which = "outer") {
     throw e;
   }
 }
-async function rebuild(env, { forceWarp = false } = {}) {
+async function rebuild(env, { forceWarp = false, siteOrigin = "" } = {}) {
   // forceWarp：先单独注册外层再重建；默认只读 KV，绝不在 rebuild 里偷注册
   // 内层（Masque Over Masque）始终只读，不自动注册
   const warp = forceWarp ? await registerWarpToKv(env, "outer") : await getWarp(env, false, "outer");
@@ -1998,12 +2418,20 @@ async function rebuild(env, { forceWarp = false } = {}) {
   const settings = await getSettings(env);
   const sni = resolveSni(settings);
   const transport = resolveTransport(settings);
-  const { yaml, entries, landings, combos, momEntries } = buildConfig(warp, opera, sni, transport, warpInner);
+  const vg = resolveVgOptions(settings, siteOrigin);
+  const { yaml, entries, landings, combos, momEntries, vgEnabled } = buildConfig(warp, opera, sni, transport, warpInner, vg);
   const now = Date.now();
   const state = {
     updatedAt: new Date(now).toISOString(),
     expiresAt: new Date(now + TTL_MS).toISOString(),
-    stats: { entries, landings, combos, momEntries: momEntries || 0 },
+    stats: { entries, landings, combos, momEntries: momEntries || 0, vgEnabled: !!vgEnabled },
+    vg: vgEnabled ? {
+      enabled: true,
+      useWarp: vg.vgUseWarp,
+      residential: vg.vgResidential,
+      limit: vg.vgLimit,
+      countries: vg.vgCountries
+    } : { enabled: false },
     sni,
     transport: {
       network: "quic",
@@ -2032,7 +2460,7 @@ function isFresh(state) {
   if (!state || !state.expiresAt) return false;
   return Date.parse(state.expiresAt) - SKEW_MS > Date.now();
 }
-async function ensureConfig(env) {
+async function ensureConfig(env, { siteOrigin = "" } = {}) {
   const state = await env.KV.get(K_STATE, "json");
   const yaml = await env.KV.get(K_CFG);
   if (yaml && isFresh(state)) return yaml;
@@ -2049,7 +2477,7 @@ async function ensureConfig(env) {
   } else {
     await env.KV.put(K_LOCK, String(Date.now()), { expirationTtl: 120 });
     try {
-      await rebuild(env, { forceWarp: false });
+      await rebuild(env, { forceWarp: false, siteOrigin });
     } catch (e) {
       // 重建失败时若仍有旧 yaml 可暂用
       if (yaml) return yaml;
@@ -2066,6 +2494,22 @@ var index_default = {
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const ip = req.headers.get("cf-connecting-ip") || "unknown";
     if (!env || !env.KV) return html(renderNoKV(), 500);
+
+    // VPNGate 节点源：供主订阅 proxy-providers 拉取，无需登录（与第一份 Usque 一致）
+    if (path === "/api/vpngate" || path === "/api/vpngate.yaml") {
+      if (req.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Headers": "*"
+          }
+        });
+      }
+      return handleVpngateSubscription(req);
+    }
+
     const cred = await env.KV.get(K_CRED, "json");
     // 先读设置以决定 token 是否按永久校验（无 cred 时用默认 true）
     const settingsBoot = await getSettings(env);
@@ -2110,7 +2554,7 @@ var index_default = {
       if (!await verifyToken(cred, t, neverExp) && !authed) return notFound();
       let yaml;
       try {
-        yaml = await ensureConfig(env);
+        yaml = await ensureConfig(env, { siteOrigin: url.origin });
       } catch (e) {
         return new Response(
           "# 配置重建失败\n# " + String(e?.message || e) + "\n# 请打开管理页查看 WARP 是否已注册，或点击「刷新 Opera 凭据」。\n",
@@ -2256,7 +2700,7 @@ var index_default = {
         sniCustom: custom
       }));
       try {
-        const st = await rebuild(env, { forceWarp: false });
+        const st = await rebuild(env, { forceWarp: false, siteOrigin: url.origin });
         return json({
           ok: true,
           msg: `SNI \u5DF2\u8BBE\u4E3A ${resolveSni({ sniPreset: preset, sniCustom: custom })}\uFF0C\u914D\u7F6E\u5DF2\u91CD\u5EFA ${st.stats.combos} \u4E2A\u7EC4\u5408`
@@ -2280,7 +2724,7 @@ var index_default = {
         bbrProfile
       }));
       try {
-        const st = await rebuild(env, { forceWarp: false });
+        const st = await rebuild(env, { forceWarp: false, siteOrigin: url.origin });
         const outerLabel = outerCc || "关闭";
         return json({
           ok: true,
@@ -2321,7 +2765,7 @@ var index_default = {
         const w = await registerWarpToKv(env, "outer");
         let rebuildMsg = "";
         try {
-          const s = await rebuild(env, { forceWarp: false });
+          const s = await rebuild(env, { forceWarp: false, siteOrigin: url.origin });
           rebuildMsg = `，配置已生成 ${s.stats.combos} 个组合` + (s.stats.momEntries ? ` + ${s.stats.momEntries} 个 MoM` : "");
         } catch (e2) {
           rebuildMsg = `，但重建配置失败：${e2.message}（可稍后再点「刷新 Opera 凭据」）`;
@@ -2344,7 +2788,7 @@ var index_default = {
         const w = await registerWarpToKv(env, "inner");
         let rebuildMsg = "";
         try {
-          const s = await rebuild(env, { forceWarp: false });
+          const s = await rebuild(env, { forceWarp: false, siteOrigin: url.origin });
           rebuildMsg = `，配置已生成 ${s.stats.momEntries || 0} 个 MoM 节点`;
         } catch (e2) {
           rebuildMsg = `，但重建配置失败：${e2.message}（可稍后再点「刷新 Opera 凭据」）`;
@@ -2360,7 +2804,7 @@ var index_default = {
     }
     if (path === "/api/refresh" && req.method === "POST") {
       try {
-        const s = await rebuild(env, { forceWarp: false });
+        const s = await rebuild(env, { forceWarp: false, siteOrigin: url.origin });
         const extra = s.stats.momEntries ? ` + ${s.stats.momEntries} 个 MoM` : "";
         return json({ ok: true, msg: `已刷新，${s.stats.combos} 个组合${extra}` });
       } catch (e) {
@@ -2370,10 +2814,44 @@ var index_default = {
     if (path === "/api/reset-warp" && req.method === "POST") {
       try {
         await registerWarpToKv(env, "outer");
-        const s = await rebuild(env, { forceWarp: false });
+        const s = await rebuild(env, { forceWarp: false, siteOrigin: url.origin });
         return json({ ok: true, msg: `外层 WARP 已重注册，${s.stats.combos} 个组合` });
       } catch (e) {
         return json({ ok: false, error: e.message }, 500);
+      }
+    }
+    if (path === "/api/vpngate-settings" && req.method === "POST") {
+      const body = await req.json().catch(() => ({}));
+      const next = {
+        ...settings,
+        vgEnabled: body.vgEnabled !== false && body.vgEnabled !== "0" && body.vgEnabled !== 0,
+        vgUseWarp: body.vgUseWarp !== false && body.vgUseWarp !== "0" && body.vgUseWarp !== 0,
+        vgResidential: body.vgResidential !== false && body.vgResidential !== "0" && body.vgResidential !== 0,
+        vgLimit: Math.max(1, Math.min(30, Number(body.vgLimit) || 15)),
+        vgJP: !!body.vgJP,
+        vgKR: !!body.vgKR,
+        vgUS: !!body.vgUS,
+        vgTW: !!body.vgTW,
+        vgHK: !!body.vgHK,
+        vgSG: !!body.vgSG,
+        vgDE: !!body.vgDE,
+        vgGB: !!body.vgGB,
+        vgOther: body.vgOther !== false && body.vgOther !== "0" && body.vgOther !== 0
+      };
+      await env.KV.put(K_SET, JSON.stringify(next));
+      try {
+        const st = await rebuild(env, { forceWarp: false, siteOrigin: url.origin });
+        return json({
+          ok: true,
+          msg: next.vgEnabled
+            ? `VPNGate 已启用并重建（limit=${next.vgLimit}）`
+            : `VPNGate 已关闭并重建，${st.stats.combos} 个组合`
+        });
+      } catch (e) {
+        return json({
+          ok: true,
+          msg: `VPNGate 设置已保存，但重建失败：${e.message}（可稍后点「刷新 Opera 凭据」）`
+        });
       }
     }
     return notFound();
