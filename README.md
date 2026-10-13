@@ -12,6 +12,7 @@
 | **Pages 注册修复** | 修复部署在 Cloudflare Pages 时 WARP 注册失败 / 超时的问题（注册与订阅热路径分离、冷却控制） |
 | **精简不可用线路** | 移除 Proton、Windscribe 相关代码（因为不可用） |
 | **新增了masque over masque协议** | 使用masque over masque协议，IP固定在美国，可以使用AI服务 |
+| **新增了vpngate家宽IP** | 默认开启了vpngate家宽 |
 
 其余逻辑（Opera 落地、订阅生成、管理密码、KV 缓存等）与原项目一致。
 
@@ -32,7 +33,7 @@
 3. 访问站点设置管理密码
 4. 在管理页点击「注册 WARP」，再「刷新 Opera 凭据」
 5. 复制订阅链接导入 Clash Verge / Mihomo 等客户端
-6. 如果要使用masque over masque协议，就将masqueOvermasque.js改名为_worker.js部署到cloudflare pages，先点击“注册外层warp”，过几分钟再点击“注册内层”，在刷新opera凭据，即可使用masque over masque协议
+6. 如果要使用masque over masque协议和vpngate家宽IP，就将masqueOvermasque.js改名为_worker.js部署到cloudflare pages，先点击“注册外层warp”，过几分钟再点击“注册内层”，在刷新opera凭据，即可使用masque over masque协议
 
 > 使用 Pages 时请确保已绑定 KV；首次使用需手动注册 WARP，订阅请求不会自动注册。
 
